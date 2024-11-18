@@ -1,5 +1,10 @@
 [
     {
+        "_id": "925225c8-8a9e-4147-98c1-d9e3803dfd86",
+        "username": "fidencio",
+        "password": "$2b$10$M7EUZ6LG/D6FiUgohHK3Qu9ikyRu/JjtMoxm9BR56LM1YfPQm6Rsu"
+    },
+    {
         "_id": "4697fa57-4a1f-48a6-b72e-ae997d45f84b",
         "username": "lacarta",
         "password": "$2b$10$4PvskiM6.7p6Q.KSUTJaUezCsMjfi.gW3qRQ9g5IIto2i5GKvwM0K"
