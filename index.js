@@ -11,10 +11,23 @@ app.set('view engine', 'ejs');
 app.use(express.json());
 app.use(cookieParser());
 
-// Configuración de CORS
+const allowedOrigins = [
+    'http://192.168.100.114:3000', // Dirección de tu frontend
+    'http://192.168.100.51:3000', // Otra IP permitida
+    'http://localhost:3000',       // Para pruebas locales
+    'http://192.168.100.219:3000'  // Otra IP adicional
+];
+
 app.use(cors({
-    origin: 'http://192.168.100.114:3000', // Cambia a la URL de tu frontend
-    credentials: true, // Permite el envío de cookies
+    origin: (origin, callback) => {
+        // Permitir solicitudes sin 'origin' (por ejemplo, herramientas locales como Postman)
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error(`No permitido por CORS: ${origin}`));
+        }
+    },
+    credentials: true, // Permite enviar cookies y encabezados de autenticación
 }));
 
 app.get('/', (req, res) => {
