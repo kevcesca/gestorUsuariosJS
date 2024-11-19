@@ -12,10 +12,10 @@ app.use(express.json());
 app.use(cookieParser());
 
 const allowedOrigins = [
-    'http://192.168.100.114:3000', // Dirección de tu frontend
-    'http://192.168.100.51:3000', // Otra IP permitida
-    'http://localhost:3000',       // Para pruebas locales
-    'http://192.168.100.219:3000'  // Otra IP adicional
+    'http://192.168.100.114:3000', 
+    'http://192.168.100.51:3000', 
+    'http://localhost:3000',
+    'http://192.168.100.219:3000'  
 ];
 
 app.use(cors({
@@ -204,6 +204,16 @@ app.get('/verify-permissions', (req, res) => {
     } catch (error) {
         console.error('Error al verificar el token:', error);
         res.status(401).json({ message: 'Token inválido o expirado.' });
+    }
+});
+
+app.get('/users-with-roles', async (req, res) => {
+    try {
+        const usersWithRoles = await UserRepository.getUsersWithRoles();
+        res.status(200).json(usersWithRoles);
+    } catch (error) {
+        console.error('Error al obtener usuarios con roles:', error);
+        res.status(500).send('Error al obtener usuarios con roles');
     }
 });
 

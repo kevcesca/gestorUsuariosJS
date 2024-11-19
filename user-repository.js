@@ -90,18 +90,14 @@ export class UserRepository {
                 FROM 
                     public.roles AS r
                 JOIN 
-                    public.permisos AS p ON r.rol_id = p.rol_id
+                    public.roles_permisos AS rp ON r.rol_id = rp.rol_id
+                JOIN 
+                    public.permisos AS p ON rp.permiso_id = p.permiso_id
                 GROUP BY 
-                    r.rol_id, 
-                    r.nombre_rol, 
-                    r.descripcion_rol;
+                    r.rol_id, r.nombre_rol, r.descripcion_rol;
             `;
             const result = await client.query(query);
-    
             return result.rows; // Devuelve los roles con permisos como un arreglo de objetos
-        } catch (error) {
-            console.error('Error al obtener roles con permisos:', error);
-            throw new Error('Error al obtener roles con permisos');
         } finally {
             client.release();
         }
@@ -109,7 +105,7 @@ export class UserRepository {
 
     static async updateRole({ rol_id, nombre_rol, descripcion_rol }) {
         const client = await pool.connect();
-    
+
         try {
             const query = `
                 UPDATE public.roles
@@ -121,13 +117,13 @@ export class UserRepository {
                 RETURNING *;
             `;
             const values = [nombre_rol, descripcion_rol, rol_id];
-    
+
             const result = await client.query(query, values);
-    
+
             if (result.rowCount === 0) {
                 throw new Error('El rol no existe o no se pudo actualizar');
             }
-    
+
             return result.rows[0]; // Devuelve el rol actualizado
         } catch (error) {
             console.error('Error al actualizar el rol:', error);
@@ -142,17 +138,25 @@ export class UserRepository {
 
         try {
             const query = `
-                SELECT 
-                    p.permiso_id,
-                    p.acceso,
-                    r.nombre_rol,
-                    r.descripcion_rol
-                FROM 
-                    permisos AS p
-                JOIN 
-                    roles AS r ON p.rol_id = r.rol_id
-                WHERE 
-                    r.rol_id = $1
+            SELECT 
+                r.rol_id AS "ID del Rol",
+                r.nombre_rol AS "Rol",
+                r.descripcion_rol AS "Descripción del Rol",
+                STRING_AGG(p.acceso, ', ') AS "Permisos"
+            FROM 
+                public.roles AS r
+            INNER JOIN 
+                public.roles_permisos AS rp
+                ON r.rol_id = rp.rol_id
+            INNER JOIN 
+                public.permisos AS p
+                ON rp.permiso_id = p.permiso_id
+            WHERE 
+                r.rol_id = $1
+            GROUP BY 
+                r.rol_id, r.nombre_rol, r.descripcion_rol
+            ORDER BY 
+                r.rol_id;
             `;
             const result = await client.query(query, [rolId]);
 
@@ -189,7 +193,7 @@ export class UserRepository {
 
     static async getUserPermissions(id_empleado) {
         const client = await pool.connect();
-
+    
         try {
             const query = `
                 SELECT
@@ -203,7 +207,9 @@ export class UserRepository {
                 JOIN
                     public.roles AS r ON ur.id_rol = r.rol_id
                 JOIN
-                    public.permisos AS p ON r.rol_id = p.rol_id
+                    public.roles_permisos AS rp ON r.rol_id = rp.rol_id
+                JOIN
+                    public.permisos AS p ON rp.permiso_id = p.permiso_id
                 WHERE
                     u.id_empleado = $1
                 GROUP BY
@@ -211,15 +217,50 @@ export class UserRepository {
                     u.nombre_usuario;
             `;
             const result = await client.query(query, [id_empleado]);
-
+    
             if (result.rowCount === 0) {
                 throw new Error('No se encontraron permisos para este usuario');
             }
-
+    
             return result.rows[0].permisos; // Devuelve solo los permisos como un array
+        } finally {
+            client.release();
+        }
+    }
+
+    static async getUsersWithRoles() {
+        const client = await pool.connect();
+
+        try {
+            const query = `
+                SELECT 
+                    u.id_empleado AS "ID Empleado",
+                    CONCAT(e.nombre, ' ', e.apellido_1, ' ', e.apellido_2) AS "Nombre Empleado",
+                    u.nombre_usuario AS "Nombre de Usuario",
+                    u.correo_usuario AS "Email",
+                    r.nombre_rol AS "Rol",
+                    u.fecha_creacion AS "Fecha de Alta",
+                    u.asigno AS "Asignó"
+                FROM 
+                    public.usuarios AS u
+                INNER JOIN 
+                    public.usuario_roles AS ur
+                    ON u.id = ur.id_usuario
+                INNER JOIN 
+                    public.roles AS r
+                    ON ur.id_rol = r.rol_id
+                LEFT JOIN 
+                    public.empleados AS e
+                    ON u.id_empleado = e.id_empleado
+                ORDER BY 
+                    u.id_empleado;
+            `;
+
+            const result = await client.query(query);
+            return result.rows; // Devuelve los usuarios con roles como un arreglo de objetos
         } catch (error) {
-            console.error('Error al obtener permisos del usuario:', error);
-            throw new Error('Error al obtener permisos del usuario');
+            console.error('Error al obtener usuarios con roles:', error);
+            throw new Error('Error al obtener usuarios con roles');
         } finally {
             client.release();
         }
