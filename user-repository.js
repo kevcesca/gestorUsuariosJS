@@ -230,34 +230,37 @@ export class UserRepository {
 
     static async getUsersWithRoles() {
         const client = await pool.connect();
-
+    
         try {
             const query = `
                 SELECT 
                     u.id_empleado AS "ID Empleado",
                     CONCAT(e.nombre, ' ', e.apellido_1, ' ', e.apellido_2) AS "Nombre Empleado",
-                    u.nombre_usuario AS "Nombre de Usuario",
+                    u.nombre_usuario AS "Nombre de Usuario", -- Incluye el campo nombre_usuario
                     u.correo_usuario AS "Email",
-                    r.nombre_rol AS "Rol",
+                    STRING_AGG(r.nombre_rol, ', ') AS "Rol", -- Agrupa roles en una sola cadena
                     u.fecha_creacion AS "Fecha de Alta",
-                    u.asigno AS "Asignó"
+                    u.asigno AS "Asignó",
+                    u.estado_usuario AS "Activo"
                 FROM 
-                    public.usuarios AS u
+                    usuarios AS u
                 INNER JOIN 
-                    public.usuario_roles AS ur
+                    usuario_roles AS ur
                     ON u.id = ur.id_usuario
                 INNER JOIN 
-                    public.roles AS r
+                    roles AS r
                     ON ur.id_rol = r.rol_id
                 LEFT JOIN 
-                    public.empleados AS e
+                    empleados AS e
                     ON u.id_empleado = e.id_empleado
+                GROUP BY 
+                    u.id_empleado, e.nombre, e.apellido_1, e.apellido_2, u.nombre_usuario, u.correo_usuario, u.fecha_creacion, u.asigno, u.estado_usuario
                 ORDER BY 
                     u.id_empleado;
             `;
-
+    
             const result = await client.query(query);
-            return result.rows; // Devuelve los usuarios con roles como un arreglo de objetos
+            return result.rows; // Devuelve los usuarios con roles agrupados y nombre de usuario
         } catch (error) {
             console.error('Error al obtener usuarios con roles:', error);
             throw new Error('Error al obtener usuarios con roles');
@@ -265,6 +268,33 @@ export class UserRepository {
             client.release();
         }
     }
+
+    static async toggleUserStatus(id_empleado) {
+        const client = await pool.connect();
+    
+        try {
+            const query = `
+                UPDATE usuarios
+                SET estado_usuario = NOT estado_usuario
+                WHERE id_empleado = $1
+                RETURNING id_empleado, estado_usuario;
+            `;
+    
+            const result = await client.query(query, [id_empleado]);
+    
+            if (result.rowCount === 0) {
+                throw new Error('Usuario no encontrado');
+            }
+    
+            return result.rows[0]; // Devuelve el usuario con el estado actualizado
+        } catch (error) {
+            console.error('Error al alternar el estado del usuario:', error);
+            throw new Error('Error al alternar el estado del usuario');
+        } finally {
+            client.release();
+        }
+    }
+
 }
 
 class Validation {

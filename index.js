@@ -217,6 +217,28 @@ app.get('/users-with-roles', async (req, res) => {
     }
 });
 
+app.put('/users/:id/toggle-status', async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const updatedUser = await UserRepository.toggleUserStatus(id);
+
+        if (!updatedUser) {
+            return res.status(404).send('Usuario no encontrado');
+        }
+
+        res.status(200).json({
+            message: `El estado del usuario con ID ${id} ha sido cambiado correctamente.`,
+            estado: updatedUser.estado_usuario,
+        });
+    } catch (error) {
+        console.error('Error al alternar el estado del usuario:', error);
+        res.status(500).send('Error al alternar el estado del usuario');
+    }
+});
+
+
+
 
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
