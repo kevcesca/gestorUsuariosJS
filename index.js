@@ -4,6 +4,7 @@ import { PORT, SECRET_JWT_KEY } from './config.js';
 import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
 import { UserRepository } from './user-repository.js';
+import bcrypt from 'bcrypt';
 
 const app = express();
 
@@ -15,7 +16,9 @@ const allowedOrigins = [
     'http://192.168.100.114:3000', 
     'http://192.168.100.51:3000', 
     'http://localhost:3000',
-    'http://192.168.100.219:3000'  
+    'http://192.168.100.219:3000',
+    'http://192.168.100.246:3000'
+
 ];
 
 app.use(cors({
@@ -102,7 +105,7 @@ app.post('/protected', (req, res) => {
 });
 
 // Verificar si el token en la cookie es válido
-app.get('/verify-token', (req, res) => {
+app.get('/verify-token', async (req, res) => {
     const token = req.cookies.access_token;
 
     if (!token) {
@@ -112,14 +115,35 @@ app.get('/verify-token', (req, res) => {
     try {
         // Verifica el token JWT
         const decoded = jwt.verify(token, SECRET_JWT_KEY);
-        
-        // Devuelve los datos del usuario (por ejemplo, ID y correo)
-        res.send({ user: { id: decoded.id, correo_usuario: decoded.correo_usuario } });
+
+        // Obtener datos adicionales del usuario (nombre_usuario) desde la base de datos
+        const client = await pool.connect();
+        const result = await client.query(
+            'SELECT nombre_usuario FROM usuarios WHERE id = $1',
+            [decoded.id]
+        );
+        client.release();
+
+        if (result.rowCount === 0) {
+            return res.status(404).send('Usuario no encontrado');
+        }
+
+        const nombre_usuario = result.rows[0].nombre_usuario;
+
+        // Devuelve los datos del usuario
+        res.send({
+            user: {
+                id: decoded.id,
+                correo_usuario: decoded.correo_usuario,
+                nombre_usuario,
+            },
+        });
     } catch (error) {
         console.error("Error al verificar el token:", error);
         res.status(401).send("Token inválido.");
     }
 });
+
 
 app.get('/roles-permissions', async (req, res) => {
     try {
@@ -169,6 +193,17 @@ app.get('/roles/:id/permissions', async (req, res) => {
         res.status(500).send('Error al obtener los permisos del rol');
     }
 });
+
+app.get('/employee-ids-with-names', async (req, res) => {
+    try {
+        const employees = await UserRepository.getAllEmployeeIdsWithNames();
+        res.status(200).json(employees);
+    } catch (error) {
+        console.error('Error al obtener IDs y nombres de empleados:', error);
+        res.status(500).send('Error al obtener IDs y nombres de empleados');
+    }
+});
+
 
 app.get('/permissions', async (req, res) => {
     try {
@@ -237,7 +272,77 @@ app.put('/users/:id/toggle-status', async (req, res) => {
     }
 });
 
+app.put('/users/:id/update-details', async (req, res) => {
+    const { id } = req.params;
+    const { nombre_usuario, correo_usuario } = req.body;
 
+    try {
+        if (!nombre_usuario || !correo_usuario) {
+            return res.status(400).send('El nombre de usuario y el correo son obligatorios');
+        }
+
+        const updatedUser = await UserRepository.updateUserDetails(id, { nombre_usuario, correo_usuario });
+
+        res.status(200).json({
+            message: `Los detalles del usuario con ID ${id} se han actualizado correctamente.`,
+            usuario: updatedUser,
+        });
+    } catch (error) {
+        console.error('Error al actualizar los detalles del usuario:', error);
+        res.status(500).send('Error al actualizar los detalles del usuario');
+    }
+});
+
+app.post('/users/:id/assign-roles', async (req, res) => {
+    const { id } = req.params;
+    const { roles } = req.body;
+
+    // Validar que los roles sean un arreglo
+    if (!Array.isArray(roles) || roles.length === 0) {
+        return res.status(400).send('La lista de roles es inválida o está vacía');
+    }
+
+    try {
+        // Llamar al método del repositorio para asignar roles
+        const result = await UserRepository.assignRolesToUser(id, roles);
+        res.status(200).json({
+            message: `Roles asignados exitosamente al usuario con ID ${id}`,
+            data: result,
+        });
+    } catch (error) {
+        console.error('Error al asignar roles al usuario:', error);
+        res.status(500).send('Error al asignar roles al usuario');
+    }
+});
+
+app.post('/users/:id/change-password', async (req, res) => {
+    const { id } = req.params;
+    const { newPassword, confirmPassword } = req.body;
+
+    // Validar que las contraseñas coincidan
+    if (newPassword !== confirmPassword) {
+        return res.status(400).send('Las contraseñas no coinciden.');
+    }
+
+    // Validar longitud mínima de la contraseña
+    if (!newPassword || newPassword.length < 6) {
+        return res.status(400).send('La nueva contraseña debe tener al menos 6 caracteres.');
+    }
+
+    try {
+        // Actualizar la contraseña (el hashing se hace dentro del repositorio)
+        const result = await UserRepository.updatePassword(id, newPassword);
+
+        if (!result) {
+            return res.status(404).send('Usuario no encontrado.');
+        }
+
+        res.status(200).json({ message: 'Contraseña actualizada exitosamente.' });
+    } catch (error) {
+        console.error('Error al cambiar la contraseña:', error);
+        res.status(500).send('Error al cambiar la contraseña.');
+    }
+});
 
 
 app.listen(PORT, () => {

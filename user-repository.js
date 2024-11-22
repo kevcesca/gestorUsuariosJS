@@ -77,6 +77,53 @@ export class UserRepository {
         }
     }
 
+    static async updatePassword(id_empleado, hashedPassword) {
+        const client = await pool.connect();
+    
+        try {
+            const query = `
+                UPDATE usuarios
+                SET contrasena_usuario = $1
+                WHERE id_empleado = $2
+                RETURNING id_empleado;
+            `;
+            const values = [hashedPassword, id_empleado];
+    
+            const result = await client.query(query, values);
+    
+            if (result.rowCount === 0) {
+                throw new Error('Usuario no encontrado.');
+            }
+    
+            return result.rows[0]; // Retorna el usuario actualizado
+        } catch (error) {
+            console.error('Error al actualizar la contraseña:', error);
+            throw new Error('Error al actualizar la contraseña.');
+        } finally {
+            client.release();
+        }
+    }    
+
+    static async getAllEmployeeIdsWithNames() {
+        const client = await pool.connect();
+    
+        try {
+            const query = `
+                SELECT id_empleado, 
+                        CONCAT(nombre, ' ', apellido_1, ' ', apellido_2) AS nombre_completo
+                FROM empleados;
+            `;
+            const result = await client.query(query);
+            return result.rows; // Devuelve una lista de objetos con id_empleado y nombre_completo
+        } catch (error) {
+            console.error('Error al obtener IDs y nombres de empleados:', error);
+            throw new Error('Error al obtener IDs y nombres de empleados');
+        } finally {
+            client.release();
+        }
+    }
+    
+
     static async getRolesWithPermissions() {
         const client = await pool.connect();
     
@@ -230,24 +277,23 @@ export class UserRepository {
 
     static async getUsersWithRoles() {
         const client = await pool.connect();
-    
         try {
             const query = `
                 SELECT 
                     u.id_empleado AS "ID Empleado",
                     CONCAT(e.nombre, ' ', e.apellido_1, ' ', e.apellido_2) AS "Nombre Empleado",
-                    u.nombre_usuario AS "Nombre de Usuario", -- Incluye el campo nombre_usuario
+                    u.nombre_usuario AS "Nombre de Usuario",
                     u.correo_usuario AS "Email",
-                    STRING_AGG(r.nombre_rol, ', ') AS "Rol", -- Agrupa roles en una sola cadena
+                    COALESCE(STRING_AGG(DISTINCT r.nombre_rol, ', '), '') AS "Rol",
                     u.fecha_creacion AS "Fecha de Alta",
                     u.asigno AS "Asignó",
                     u.estado_usuario AS "Activo"
                 FROM 
                     usuarios AS u
-                INNER JOIN 
+                LEFT JOIN 
                     usuario_roles AS ur
                     ON u.id = ur.id_usuario
-                INNER JOIN 
+                LEFT JOIN 
                     roles AS r
                     ON ur.id_rol = r.rol_id
                 LEFT JOIN 
@@ -258,9 +304,8 @@ export class UserRepository {
                 ORDER BY 
                     u.id_empleado;
             `;
-    
             const result = await client.query(query);
-            return result.rows; // Devuelve los usuarios con roles agrupados y nombre de usuario
+            return result.rows; // Devuelve los usuarios con roles agrupados
         } catch (error) {
             console.error('Error al obtener usuarios con roles:', error);
             throw new Error('Error al obtener usuarios con roles');
@@ -295,7 +340,111 @@ export class UserRepository {
         }
     }
 
+    static async updateUserDetails(id_empleado, { nombre_usuario, correo_usuario }) {
+        const client = await pool.connect();
+    
+        try {
+            // Validaciones de los campos
+            Validation.correo_usuario(correo_usuario);
+            if (!nombre_usuario || typeof nombre_usuario !== 'string') {
+                throw new Error('El nombre de usuario es inválido');
+            }
+    
+            // Actualizar los campos en la base de datos
+            const query = `
+                UPDATE usuarios
+                SET nombre_usuario = $1, correo_usuario = $2
+                WHERE id_empleado = $3
+                RETURNING id_empleado, nombre_usuario, correo_usuario;
+            `;
+            const values = [nombre_usuario, correo_usuario, id_empleado];
+    
+            const result = await client.query(query, values);
+    
+            if (result.rowCount === 0) {
+                throw new Error('Usuario no encontrado');
+            }
+    
+            return result.rows[0]; // Devuelve los datos actualizados
+        } catch (error) {
+            console.error('Error al actualizar los detalles del usuario:', error);
+            throw new Error('Error al actualizar los detalles del usuario');
+        } finally {
+            client.release();
+        }
+    }
+
+    static async assignRolesToUser(id_empleado, roles) {
+        const client = await pool.connect();
+    
+        try {
+            // Validar que el usuario existe
+            const userCheck = await client.query(
+                'SELECT id FROM usuarios WHERE id_empleado = $1',
+                [id_empleado]
+            );
+    
+            if (userCheck.rowCount === 0) {
+                throw new Error('El usuario no existe');
+            }
+    
+            const userId = userCheck.rows[0].id;
+    
+            // Eliminar todos los roles actuales del usuario
+            await client.query('DELETE FROM usuario_roles WHERE id_usuario = $1', [userId]);
+    
+            // Asignar los nuevos roles
+            const insertPromises = roles.map((rolId) =>
+                client.query(
+                    'INSERT INTO usuario_roles (id_usuario, id_rol) VALUES ($1, $2)',
+                    [userId, rolId]
+                )
+            );
+            await Promise.all(insertPromises);
+    
+            return { id_empleado, roles };
+        } catch (error) {
+            console.error('Error al asignar roles al usuario:', error);
+            throw new Error('Error al asignar roles al usuario');
+        } finally {
+            client.release();
+        }
+    }
+    
+    static async updatePassword(id_empleado, newPassword) {
+        const client = await pool.connect();
+    
+        try {
+            // Hashear la nueva contraseña
+            const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    
+            // Actualizar la contraseña en la base de datos
+            const query = `
+                UPDATE usuarios
+                SET contrasena_usuario = $1
+                WHERE id_empleado = $2
+                RETURNING id_empleado;
+            `;
+            const values = [hashedPassword, id_empleado];
+    
+            const result = await client.query(query, values);
+    
+            if (result.rowCount === 0) {
+                throw new Error('Usuario no encontrado.');
+            }
+    
+            return result.rows[0]; // Retorna el usuario actualizado
+        } catch (error) {
+            console.error('Error al actualizar la contraseña:', error);
+            throw new Error('Error al actualizar la contraseña.');
+        } finally {
+            client.release();
+        }
+    }    
+    
 }
+
+
 
 class Validation {
     static correo_usuario(correo_usuario) {
