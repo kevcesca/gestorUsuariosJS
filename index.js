@@ -64,9 +64,9 @@ app.post('/login', async (req, res) => {
         res
             .cookie('access_token', token, {
                 httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'Strict',
-                maxAge: 1000 * 60 * 60, // 1 hora
+                secure: false, // Cambia a false si estás en localhost
+                sameSite: 'Lax', // Usa 'Lax' para permitir solicitudes cruzadas desde tu frontend
+                maxAge: 1000 * 60 * 60, // Duración: 1 hora
             })
             .send({ user, token }); // Envía la información del usuario y el token
             console.log('Cookie configurada:', token);
@@ -105,44 +105,35 @@ app.post('/protected', (req, res) => {
 });
 
 // Verificar si el token en la cookie es válido
-app.get('/verify-token', async (req, res) => {
+// Replantear el servicio verify-token
+app.get('/verify-token', (req, res) => {
     const token = req.cookies.access_token;
 
+    // Verificar si la cookie contiene un token
     if (!token) {
-        return res.status(401).send("No token provided.");
+        console.warn('No se encontró token en la cookie.');
+        return res.status(401).json({ message: 'Token no proporcionado.' });
     }
 
     try {
-        // Verifica el token JWT
+        // Verificar y decodificar el token
         const decoded = jwt.verify(token, SECRET_JWT_KEY);
+        console.log('Token decodificado correctamente:', decoded);
 
-        // Obtener datos adicionales del usuario (nombre_usuario) desde la base de datos
-        const client = await pool.connect();
-        const result = await client.query(
-            'SELECT nombre_usuario FROM usuarios WHERE id = $1',
-            [decoded.id]
-        );
-        client.release();
-
-        if (result.rowCount === 0) {
-            return res.status(404).send('Usuario no encontrado');
-        }
-
-        const nombre_usuario = result.rows[0].nombre_usuario;
-
-        // Devuelve los datos del usuario
-        res.send({
+        // Responder con la información del usuario decodificada
+        return res.status(200).json({
             user: {
                 id: decoded.id,
                 correo_usuario: decoded.correo_usuario,
-                nombre_usuario,
+                permisos: decoded.permisos,
             },
         });
-    } catch (error) {
-        console.error("Error al verificar el token:", error);
-        res.status(401).send("Token inválido.");
+    } catch (err) {
+        console.error('Error al verificar el token:', err.message);
+        return res.status(401).json({ message: 'Token inválido o expirado.' });
     }
 });
+
 
 
 app.get('/roles-permissions', async (req, res) => {
@@ -343,6 +334,76 @@ app.post('/users/:id/change-password', async (req, res) => {
         res.status(500).send('Error al cambiar la contraseña.');
     }
 });
+
+app.post('/roles', async (req, res) => {
+    const { nombre_rol, descripcion_rol, permisos } = req.body;
+
+    // Validar que todos los parámetros estén presentes
+    if (!nombre_rol || !descripcion_rol || !Array.isArray(permisos) || permisos.length === 0) {
+        return res.status(400).send('El nombre del rol, la descripción y al menos un permiso son obligatorios.');
+    }
+
+    try {
+        // Llamar al método del repositorio para crear el rol
+        const newRole = await UserRepository.createRole({ nombre_rol, descripcion_rol, permisos });
+        res.status(201).json({ message: 'Rol creado exitosamente', data: newRole });
+    } catch (error) {
+        console.error('Error al crear el rol:', error);
+        res.status(500).send('Error al crear el rol');
+    }
+});
+
+app.delete('/roles', async (req, res) => {
+    const { roleIds } = req.body; // Esperamos un array de IDs de roles
+
+    // Validar que roleIds sea un arreglo
+    if (!Array.isArray(roleIds) || roleIds.length === 0) {
+        return res.status(400).send('Debe proporcionar al menos un rol para eliminar.');
+    }
+
+    try {
+        // Llamar al método del repositorio para eliminar los roles
+        const deletedRoles = await UserRepository.deleteRoles(roleIds);
+        res.status(200).json({
+            message: 'Roles eliminados exitosamente',
+            data: deletedRoles,
+        });
+    } catch (error) {
+        console.error('Error al eliminar roles:', error);
+        res.status(500).send('Error al eliminar roles.');
+    }
+});
+
+app.post('/roles/:id/assign-permissions', async (req, res) => {
+    const { id } = req.params; // ID del rol
+    const { permissions } = req.body; // Lista de permisos a asignar
+
+    // Validar que los permisos sean un arreglo
+    if (!Array.isArray(permissions) || permissions.length === 0) {
+        return res.status(400).send('La lista de permisos es inválida o está vacía');
+    }
+
+    try {
+        // Llama al repositorio para asignar los permisos al rol
+        const result = await UserRepository.assignPermissionsToRole(id, permissions);
+        res.status(200).json({
+            message: `Permisos asignados exitosamente al rol con ID ${id}`,
+            data: result,
+        });
+    } catch (error) {
+        console.error('Error al asignar permisos al rol:', error);
+        res.status(500).send('Error al asignar permisos al rol');
+    }
+});
+
+
+
+
+// Endpoints para gestionar eventos en el calendario
+
+
+
+
 
 
 app.listen(PORT, () => {

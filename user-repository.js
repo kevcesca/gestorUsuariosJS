@@ -3,6 +3,7 @@ const { Pool } = pkg;
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { SALT_ROUNDS, PG_HOST, PG_USER, PG_PASSWORD, PG_DATABASE, PG_PORT } from './config.js';
+import { CalendarRepository } from './calendar-repository.js';
 
 const pool = new Pool({
     host: PG_HOST,
@@ -440,7 +441,104 @@ export class UserRepository {
         } finally {
             client.release();
         }
-    }    
+    }
+    
+    static async assignPermissionsToRole(rol_id, permissions) {
+        const client = await pool.connect();
+    
+        try {
+            // Validar que el rol exista
+            const roleCheck = await client.query('SELECT * FROM roles WHERE rol_id = $1', [rol_id]);
+    
+            if (roleCheck.rowCount === 0) {
+                throw new Error('El rol no existe');
+            }
+    
+            // Eliminar todos los permisos actuales del rol
+            await client.query('DELETE FROM roles_permisos WHERE rol_id = $1', [rol_id]);
+    
+            // Asignar los nuevos permisos
+            const insertPromises = permissions.map((permisoId) =>
+                client.query('INSERT INTO roles_permisos (rol_id, permiso_id) VALUES ($1, $2)', [rol_id, permisoId])
+            );
+            await Promise.all(insertPromises);
+    
+            return { rol_id, permissions };
+        } catch (error) {
+            console.error('Error al asignar permisos al rol:', error);
+            throw new Error('Error al asignar permisos al rol');
+        } finally {
+            client.release();
+        }
+    }
+    
+    static async createRole({ nombre_rol, descripcion_rol, permisos }) {
+        const client = await pool.connect();
+    
+        try {
+            await client.query('BEGIN'); // Iniciar transacción
+    
+            // Insertar el nuevo rol
+            const roleQuery = `
+                INSERT INTO roles (nombre_rol, descripcion_rol)
+                VALUES ($1, $2)
+                RETURNING rol_id;
+            `;
+            const roleResult = await client.query(roleQuery, [nombre_rol, descripcion_rol]);
+            const newRoleId = roleResult.rows[0].rol_id;
+    
+            // Insertar permisos para el rol
+            const permissionPromises = permisos.map((permiso_id) =>
+                client.query(
+                    `
+                    INSERT INTO roles_permisos (rol_id, permiso_id)
+                    VALUES ($1, $2);
+                `,
+                    [newRoleId, permiso_id]
+                )
+            );
+            await Promise.all(permissionPromises);
+    
+            await client.query('COMMIT'); // Confirmar transacción
+    
+            return { rol_id: newRoleId, nombre_rol, descripcion_rol, permisos };
+        } catch (error) {
+            await client.query('ROLLBACK'); // Revertir cambios en caso de error
+            console.error('Error al crear el rol:', error);
+            throw new Error('Error al crear el rol');
+        } finally {
+            client.release();
+        }
+    }
+    
+    static async deleteRoles(roleIds) {
+        const client = await pool.connect();
+    
+        try {
+            await client.query('BEGIN'); // Inicia una transacción
+    
+            // Validar que roleIds sea un arreglo y tenga al menos un elemento
+            if (!Array.isArray(roleIds) || roleIds.length === 0) {
+                throw new Error('Debe proporcionar al menos un rol para eliminar.');
+            }
+    
+            // Elimina los permisos asociados con los roles
+            await client.query('DELETE FROM roles_permisos WHERE rol_id = ANY($1::int[])', [roleIds]);
+    
+            // Elimina los roles
+            const result = await client.query('DELETE FROM roles WHERE rol_id = ANY($1::int[]) RETURNING *', [roleIds]);
+    
+            await client.query('COMMIT'); // Confirma la transacción
+    
+            return result.rows; // Devuelve los roles eliminados
+        } catch (error) {
+            await client.query('ROLLBACK'); // Revertir la transacción en caso de error
+            console.error('Error al eliminar los roles:', error);
+            throw new Error('Error al eliminar los roles.');
+        } finally {
+            client.release();
+        }
+    }
     
 }
 
