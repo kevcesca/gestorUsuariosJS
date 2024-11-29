@@ -5,16 +5,19 @@ import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
 import { UserRepository } from './user-repository.js';
 import bcrypt from 'bcrypt';
+import calendarRoutes from './calendar-routes.js'; // Ajusta la ruta según tu proyecto
+
 
 const app = express();
 
 app.set('view engine', 'ejs');
 app.use(express.json());
 app.use(cookieParser());
+app.use('/calendario', calendarRoutes); // Prefijo para las rutas del calendario
 
 const allowedOrigins = [
-    'http://192.168.100.114:3000', 
-    'http://192.168.100.51:3000', 
+    'http://192.168.100.114:3000',
+    'http://192.168.100.51:3000',
     'http://localhost:3000',
     'http://192.168.100.219:3000',
     'http://192.168.100.246:3000'
@@ -69,7 +72,7 @@ app.post('/login', async (req, res) => {
                 maxAge: 1000 * 60 * 60, // Duración: 1 hora
             })
             .send({ user, token }); // Envía la información del usuario y el token
-            console.log('Cookie configurada:', token);
+        console.log('Cookie configurada:', token);
     } catch (error) {
         console.error('Error en el login:', error);
         res.status(401).send(error.message);
@@ -78,13 +81,13 @@ app.post('/login', async (req, res) => {
 
 app.post('/register', async (req, res) => {
     const { nombre_usuario, correo_usuario, contrasena_usuario, rol_id, id_empleado, asigno } = req.body;
-    
+
     try {
-        const id = await UserRepository.create({ 
-            nombre_usuario, 
-            correo_usuario, 
-            contrasena_usuario, 
-            rol_id, 
+        const id = await UserRepository.create({
+            nombre_usuario,
+            correo_usuario,
+            contrasena_usuario,
+            rol_id,
             id_empleado,
             asigno
         });
@@ -173,7 +176,7 @@ app.get('/roles/:id/permissions', async (req, res) => {
 
     try {
         const permissions = await UserRepository.getRolePermissions(id);
-        
+
         if (permissions.length === 0) {
             return res.status(404).send(`No se encontraron permisos para el rol con ID ${id}`);
         }
@@ -294,17 +297,27 @@ app.post('/users/:id/assign-roles', async (req, res) => {
     }
 
     try {
-        // Llamar al método del repositorio para asignar roles
+        // Llamar al método del repositorio para asignar roles al usuario
         const result = await UserRepository.assignRolesToUser(id, roles);
+
+        // Obtener los nombres de los roles asignados
+        const roleNames = await UserRepository.getRoleNamesByIds(roles);
+
+        // Responder con los datos y nombres de los roles
         res.status(200).json({
             message: `Roles asignados exitosamente al usuario con ID ${id}`,
-            data: result,
+            data: {
+                id_empleado: result.id_empleado,
+                roles: result.roles, // Los IDs de los roles
+                roleNames: roleNames, // Los nombres de los roles asignados
+            },
         });
     } catch (error) {
         console.error('Error al asignar roles al usuario:', error);
         res.status(500).send('Error al asignar roles al usuario');
     }
 });
+
 
 app.post('/users/:id/change-password', async (req, res) => {
     const { id } = req.params;
@@ -333,6 +346,34 @@ app.post('/users/:id/change-password', async (req, res) => {
         console.error('Error al cambiar la contraseña:', error);
         res.status(500).send('Error al cambiar la contraseña.');
     }
+});
+
+app.get('/verify-token', (req, res) => {
+    const token = req.cookies.token;
+
+    if (!token) {
+        return res.status(401).json({ error: 'No token provided' });
+    }
+
+    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+        if (err) {
+            return res.status(401).json({ error: 'Invalid token' });
+        }
+
+        // Aquí recuperas el usuario por el id
+        UserRepository.findById(decoded.id_usuario)
+            .then(user => {
+                if (user) {
+                    // Asegúrate de devolver id_empleado
+                    res.status(200).json({ user: { id_empleado: user.id_empleado, ...user } });
+                } else {
+                    res.status(404).json({ error: 'User not found' });
+                }
+            })
+            .catch(err => {
+                res.status(500).json({ error: 'Internal server error' });
+            });
+    });
 });
 
 app.post('/roles', async (req, res) => {
@@ -374,6 +415,22 @@ app.delete('/roles', async (req, res) => {
     }
 });
 
+app.post('/check-password', async (req, res) => {
+    const { id_empleado, password } = req.body; // id_empleado y la contraseña a verificar
+
+    try {
+        // Paso 1: Verificar si la contraseña es correcta
+        const isValidPassword = await UserRepository.checkPasswordForEmployee(id_empleado, password);
+
+        if (isValidPassword) {
+            res.status(200).json({ message: 'Contraseña correcta' });
+        }
+    } catch (error) {
+        console.error('Error al verificar la contraseña:', error);
+        res.status(401).json({ message: error.message });
+    }
+});
+
 app.post('/roles/:id/assign-permissions', async (req, res) => {
     const { id } = req.params; // ID del rol
     const { permissions } = req.body; // Lista de permisos a asignar
@@ -396,14 +453,17 @@ app.post('/roles/:id/assign-permissions', async (req, res) => {
     }
 });
 
+app.get('/users/:id/employee-id', async (req, res) => {
+    const { id } = req.params; // ID del usuario (id_usuario)
 
-
-
-// Endpoints para gestionar eventos en el calendario
-
-
-
-
+    try {
+        const idEmpleado = await UserRepository.getEmployeeIdByUserId(id);
+        res.status(200).json({ id_empleado: idEmpleado });
+    } catch (error) {
+        console.error('Error al obtener el id_empleado:', error);
+        res.status(500).json({ message: 'Error al obtener el id_empleado.' });
+    }
+});
 
 
 app.listen(PORT, () => {

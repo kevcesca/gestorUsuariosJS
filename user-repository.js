@@ -3,7 +3,6 @@ const { Pool } = pkg;
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { SALT_ROUNDS, PG_HOST, PG_USER, PG_PASSWORD, PG_DATABASE, PG_PORT } from './config.js';
-import { CalendarRepository } from './calendar-repository.js';
 
 const pool = new Pool({
     host: PG_HOST,
@@ -39,6 +38,40 @@ export class UserRepository {
             );
 
             return result.rows[0].id;
+        } finally {
+            client.release();
+        }
+    }
+
+    // Verifica si la contraseña actual es correcta y no es Azcapotzalco1!
+    static async verifyPassword(userId, currentPassword) {
+        const client = await pool.connect();
+
+        try {
+            // 1. Obtener la contraseña actual encriptada desde la base de datos
+            const result = await client.query('SELECT contrasena_usuario FROM usuarios WHERE id_empleado = $1', [userId]);
+            if (result.rowCount === 0) {
+                throw new Error('Usuario no encontrado');
+            }
+
+            const storedHashedPassword = result.rows[0].contrasena_usuario;
+
+            // 2. Verificar si la contraseña actual coincide con la almacenada (usando bcrypt)
+            const isPasswordCorrect = await bcrypt.compare(currentPassword, storedHashedPassword);
+
+            if (!isPasswordCorrect) {
+                throw new Error('La contraseña actual es incorrecta');
+            }
+
+            // 3. Verificar si la contraseña actual es Azcapotzalco1!
+            if (currentPassword === 'Azcapotzalco1!') {
+                throw new Error('La contraseña no puede ser Azcapotzalco1!');
+            }
+
+            return { message: 'Contraseña verificada correctamente' };
+        } catch (error) {
+            console.error('Error al verificar la contraseña:', error);
+            throw new Error(error.message);
         } finally {
             client.release();
         }
@@ -80,7 +113,7 @@ export class UserRepository {
 
     static async updatePassword(id_empleado, hashedPassword) {
         const client = await pool.connect();
-    
+
         try {
             const query = `
                 UPDATE usuarios
@@ -89,13 +122,13 @@ export class UserRepository {
                 RETURNING id_empleado;
             `;
             const values = [hashedPassword, id_empleado];
-    
+
             const result = await client.query(query, values);
-    
+
             if (result.rowCount === 0) {
                 throw new Error('Usuario no encontrado.');
             }
-    
+
             return result.rows[0]; // Retorna el usuario actualizado
         } catch (error) {
             console.error('Error al actualizar la contraseña:', error);
@@ -103,11 +136,60 @@ export class UserRepository {
         } finally {
             client.release();
         }
-    }    
+    }
+
+    static async findById(id_empleado) {
+        const client = await pool.connect();
+
+        try {
+            const query = 'SELECT * FROM usuarios WHERE id_empleado = $1';
+            const result = await client.query(query, [id_empleado]);
+
+            if (result.rowCount === 0) {
+                throw new Error('Usuario no encontrado');
+            }
+
+            return result.rows[0];  // Retorna el primer usuario encontrado
+        } catch (error) {
+            console.error('Error al buscar el usuario por ID:', error);
+            throw new Error('Error al buscar el usuario');
+        } finally {
+            client.release();
+        }
+    }
+
+    // Modificado para buscar por id_empleado
+    static async findByIdEmpleado(id_empleado) {
+        const client = await pool.connect();
+        try {
+            const query = `
+            SELECT 
+                u.id_empleado,
+                u.contrasena_usuario
+            FROM 
+                usuarios AS u
+            WHERE
+                u.id_empleado = $1
+        `;
+            const result = await client.query(query, [id_empleado]);
+
+            // Si no hay ningún usuario con ese id_empleado
+            if (result.rows.length === 0) {
+                return null;
+            }
+
+            return result.rows[0]; // Retorna el primer usuario encontrado
+        } catch (error) {
+            console.error('Error al buscar el usuario por id_empleado:', error);
+            throw new Error('Error al buscar el usuario');
+        } finally {
+            client.release();
+        }
+    }
 
     static async getAllEmployeeIdsWithNames() {
         const client = await pool.connect();
-    
+
         try {
             const query = `
                 SELECT id_empleado, 
@@ -123,11 +205,11 @@ export class UserRepository {
             client.release();
         }
     }
-    
+
 
     static async getRolesWithPermissions() {
         const client = await pool.connect();
-    
+
         try {
             const query = `
                 SELECT 
@@ -241,7 +323,7 @@ export class UserRepository {
 
     static async getUserPermissions(id_empleado) {
         const client = await pool.connect();
-    
+
         try {
             const query = `
                 SELECT
@@ -265,11 +347,11 @@ export class UserRepository {
                     u.nombre_usuario;
             `;
             const result = await client.query(query, [id_empleado]);
-    
+
             if (result.rowCount === 0) {
                 throw new Error('No se encontraron permisos para este usuario');
             }
-    
+
             return result.rows[0].permisos; // Devuelve solo los permisos como un array
         } finally {
             client.release();
@@ -317,7 +399,7 @@ export class UserRepository {
 
     static async toggleUserStatus(id_empleado) {
         const client = await pool.connect();
-    
+
         try {
             const query = `
                 UPDATE usuarios
@@ -325,13 +407,13 @@ export class UserRepository {
                 WHERE id_empleado = $1
                 RETURNING id_empleado, estado_usuario;
             `;
-    
+
             const result = await client.query(query, [id_empleado]);
-    
+
             if (result.rowCount === 0) {
                 throw new Error('Usuario no encontrado');
             }
-    
+
             return result.rows[0]; // Devuelve el usuario con el estado actualizado
         } catch (error) {
             console.error('Error al alternar el estado del usuario:', error);
@@ -343,14 +425,14 @@ export class UserRepository {
 
     static async updateUserDetails(id_empleado, { nombre_usuario, correo_usuario }) {
         const client = await pool.connect();
-    
+
         try {
             // Validaciones de los campos
             Validation.correo_usuario(correo_usuario);
             if (!nombre_usuario || typeof nombre_usuario !== 'string') {
                 throw new Error('El nombre de usuario es inválido');
             }
-    
+
             // Actualizar los campos en la base de datos
             const query = `
                 UPDATE usuarios
@@ -359,13 +441,13 @@ export class UserRepository {
                 RETURNING id_empleado, nombre_usuario, correo_usuario;
             `;
             const values = [nombre_usuario, correo_usuario, id_empleado];
-    
+
             const result = await client.query(query, values);
-    
+
             if (result.rowCount === 0) {
                 throw new Error('Usuario no encontrado');
             }
-    
+
             return result.rows[0]; // Devuelve los datos actualizados
         } catch (error) {
             console.error('Error al actualizar los detalles del usuario:', error);
@@ -403,22 +485,45 @@ export class UserRepository {
             );
             await Promise.all(insertPromises);
     
-            return { id_empleado, roles };
+            // Obtener los nombres de los roles asignados
+            const roleNames = await this.getRoleNamesByIds(roles);
+    
+            // Devolver el id_empleado, los roles y los nombres de los roles asignados
+            return { id_empleado, roles, roleNames };
         } catch (error) {
             console.error('Error al asignar roles al usuario:', error);
             throw new Error('Error al asignar roles al usuario');
         } finally {
             client.release();
         }
-    }
-    
-    static async updatePassword(id_empleado, newPassword) {
+    }    
+
+    static async getRoleNamesByIds(roleIds) {
         const client = await pool.connect();
     
         try {
+            // Obtener los nombres de los roles por sus IDs (ajustado para usar 'id_rol' en lugar de 'id')
+            const query = 'SELECT nombre_rol FROM roles WHERE rol_id = ANY($1)';
+            const result = await client.query(query, [roleIds]);
+    
+            // Extraemos solo los nombres de los roles
+            return result.rows.map(row => row.nombre_rol);
+        } catch (error) {
+            console.error('Error al obtener los nombres de los roles:', error);
+            throw new Error('Error al obtener los nombres de los roles');
+        } finally {
+            client.release();
+        }
+    }
+    
+
+    static async updatePassword(id_empleado, newPassword) {
+        const client = await pool.connect();
+
+        try {
             // Hashear la nueva contraseña
             const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
-    
+
             // Actualizar la contraseña en la base de datos
             const query = `
                 UPDATE usuarios
@@ -427,13 +532,13 @@ export class UserRepository {
                 RETURNING id_empleado;
             `;
             const values = [hashedPassword, id_empleado];
-    
+
             const result = await client.query(query, values);
-    
+
             if (result.rowCount === 0) {
                 throw new Error('Usuario no encontrado.');
             }
-    
+
             return result.rows[0]; // Retorna el usuario actualizado
         } catch (error) {
             console.error('Error al actualizar la contraseña:', error);
@@ -442,27 +547,27 @@ export class UserRepository {
             client.release();
         }
     }
-    
+
     static async assignPermissionsToRole(rol_id, permissions) {
         const client = await pool.connect();
-    
+
         try {
             // Validar que el rol exista
             const roleCheck = await client.query('SELECT * FROM roles WHERE rol_id = $1', [rol_id]);
-    
+
             if (roleCheck.rowCount === 0) {
                 throw new Error('El rol no existe');
             }
-    
+
             // Eliminar todos los permisos actuales del rol
             await client.query('DELETE FROM roles_permisos WHERE rol_id = $1', [rol_id]);
-    
+
             // Asignar los nuevos permisos
             const insertPromises = permissions.map((permisoId) =>
                 client.query('INSERT INTO roles_permisos (rol_id, permiso_id) VALUES ($1, $2)', [rol_id, permisoId])
             );
             await Promise.all(insertPromises);
-    
+
             return { rol_id, permissions };
         } catch (error) {
             console.error('Error al asignar permisos al rol:', error);
@@ -471,13 +576,13 @@ export class UserRepository {
             client.release();
         }
     }
-    
+
     static async createRole({ nombre_rol, descripcion_rol, permisos }) {
         const client = await pool.connect();
-    
+
         try {
             await client.query('BEGIN'); // Iniciar transacción
-    
+
             // Insertar el nuevo rol
             const roleQuery = `
                 INSERT INTO roles (nombre_rol, descripcion_rol)
@@ -486,7 +591,7 @@ export class UserRepository {
             `;
             const roleResult = await client.query(roleQuery, [nombre_rol, descripcion_rol]);
             const newRoleId = roleResult.rows[0].rol_id;
-    
+
             // Insertar permisos para el rol
             const permissionPromises = permisos.map((permiso_id) =>
                 client.query(
@@ -498,9 +603,9 @@ export class UserRepository {
                 )
             );
             await Promise.all(permissionPromises);
-    
+
             await client.query('COMMIT'); // Confirmar transacción
-    
+
             return { rol_id: newRoleId, nombre_rol, descripcion_rol, permisos };
         } catch (error) {
             await client.query('ROLLBACK'); // Revertir cambios en caso de error
@@ -510,26 +615,77 @@ export class UserRepository {
             client.release();
         }
     }
-    
+
+    static async getEmployeeIdByUserId(userId) {
+        try {
+            const query = `
+                SELECT id_empleado
+                FROM public.usuarios
+                WHERE id = $1
+            `;
+            const result = await pool.query(query, [userId]);
+
+            if (result.rows.length === 0) {
+                throw new Error('Usuario no encontrado');
+            }
+
+            return result.rows[0].id_empleado;
+        } catch (error) {
+            console.error('Error al obtener el id_empleado:', error);
+            throw error;
+        }
+    }
+
+    static async checkPasswordForEmployee(idEmpleado, password) {
+        try {
+            // Paso 1: Obtener el hash de la contraseña del empleado desde la base de datos
+            const query = `
+                SELECT contrasena_usuario
+                FROM public.usuarios
+                WHERE id_empleado = $1
+            `;
+            const result = await pool.query(query, [idEmpleado]);
+
+            if (result.rows.length === 0) {
+                throw new Error('Empleado no encontrado');
+            }
+
+            // Paso 2: Obtener el hash de la contraseña
+            const hashedPassword = result.rows[0].contrasena_usuario;
+
+            // Paso 3: Comparar el hash de la contraseña con la contraseña proporcionada
+            const match = await bcrypt.compare(password, hashedPassword);
+
+            if (!match) {
+                throw new Error('La contraseña es incorrecta');
+            }
+
+            return true; // La contraseña es correcta
+        } catch (error) {
+            console.error('Error al verificar la contraseña del empleado:', error);
+            throw error;
+        }
+    }
+
     static async deleteRoles(roleIds) {
         const client = await pool.connect();
-    
+
         try {
             await client.query('BEGIN'); // Inicia una transacción
-    
+
             // Validar que roleIds sea un arreglo y tenga al menos un elemento
             if (!Array.isArray(roleIds) || roleIds.length === 0) {
                 throw new Error('Debe proporcionar al menos un rol para eliminar.');
             }
-    
+
             // Elimina los permisos asociados con los roles
             await client.query('DELETE FROM roles_permisos WHERE rol_id = ANY($1::int[])', [roleIds]);
-    
+
             // Elimina los roles
             const result = await client.query('DELETE FROM roles WHERE rol_id = ANY($1::int[]) RETURNING *', [roleIds]);
-    
+
             await client.query('COMMIT'); // Confirma la transacción
-    
+
             return result.rows; // Devuelve los roles eliminados
         } catch (error) {
             await client.query('ROLLBACK'); // Revertir la transacción en caso de error
@@ -539,7 +695,7 @@ export class UserRepository {
             client.release();
         }
     }
-    
+
 }
 
 
