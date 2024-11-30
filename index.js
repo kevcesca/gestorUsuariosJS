@@ -16,18 +16,21 @@ app.use(cookieParser());
 app.use('/calendario', calendarRoutes); // Prefijo para las rutas del calendario
 
 const allowedOrigins = [
-    'http://192.168.100.114:3000',
-    'http://192.168.100.51:3000',
     'http://localhost:3000',
-    'http://192.168.100.219:3000',
-    'http://192.168.100.246:3000'
-
+    // Aquí puedes agregar las IPs específicas si es necesario
 ];
 
 app.use(cors({
     origin: (origin, callback) => {
-        // Permitir solicitudes sin 'origin' (por ejemplo, herramientas locales como Postman)
-        if (!origin || allowedOrigins.includes(origin)) {
+        // Si la origin es undefined (por ejemplo, cuando se hace la petición desde Postman o similar), se permite
+        if (!origin) {
+            return callback(null, true);
+        }
+
+        // Comprobar si el origen coincide con el rango de IPs 192.168.100.*
+        const ipPattern = /^http:\/\/192\.168\.100\.\d{1,3}:3000$/;
+
+        if (allowedOrigins.includes(origin) || ipPattern.test(origin)) {
             callback(null, true);
         } else {
             callback(new Error(`No permitido por CORS: ${origin}`));
