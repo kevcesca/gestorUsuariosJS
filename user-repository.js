@@ -79,37 +79,43 @@ export class UserRepository {
 
     static async login({ correo_usuario, contrasena_usuario }) {
         Validation.correo_usuario(correo_usuario);
-
+    
         const client = await pool.connect();
-
+    
         try {
             const userResult = await client.query(
                 'SELECT * FROM usuarios WHERE correo_usuario = $1',
                 [correo_usuario]
             );
-
+    
             if (userResult.rowCount === 0) {
                 throw new Error('Usuario no encontrado');
             }
-
+    
             const user = userResult.rows[0];
+    
+            // Verificar si el usuario está activo
+            if (!user.estado_usuario) {
+                throw new Error('El usuario está desactivado');
+            }
+    
             const isValid = await bcrypt.compare(contrasena_usuario, user.contrasena_usuario);
             if (!isValid) {
                 throw new Error('Contraseña incorrecta');
             }
-
+    
             // Actualizar la fecha de último acceso
             await client.query(
                 'UPDATE usuarios SET fecha_ultimo_acceso = NOW() WHERE id = $1',
                 [user.id]
             );
-
+    
             const { contrasena_usuario: _, ...publicUser } = user;
             return publicUser;
         } finally {
             client.release();
         }
-    }
+    }    
 
     static async updatePassword(id_empleado, hashedPassword) {
         const client = await pool.connect();
