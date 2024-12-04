@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import { UserRepository } from './user-repository.js';
 import bcrypt from 'bcrypt';
 import calendarRoutes from './calendar-routes.js'; // Ajusta la ruta según tu proyecto
+import chequeRoutes from './chequeRoutes.js';
 
 
 const app = express();
@@ -38,6 +39,8 @@ app.use(cors({
     },
     credentials: true, // Permite enviar cookies y encabezados de autenticación
 }));
+
+app.use(chequeRoutes);
 
 app.get('/', (req, res) => {
     res.render('example', { username: 'devekin' });
@@ -139,7 +142,6 @@ app.get('/verify-token', (req, res) => {
         return res.status(401).json({ message: 'Token inválido o expirado.' });
     }
 });
-
 
 
 app.get('/roles-permissions', async (req, res) => {
