@@ -29,7 +29,7 @@ app.use(cors({
         }
 
         // Comprobar si el origen coincide con el rango de IPs 192.168.100.*
-        const ipPattern = /^http:\/\/192\.168\.100\.\d{1,3}:3000$/;
+        const ipPattern = /^http:\/\/192\.168\.(100|0)\.\d{1,3}:3000$/;
 
         if (allowedOrigins.includes(origin) || ipPattern.test(origin)) {
             callback(null, true);
