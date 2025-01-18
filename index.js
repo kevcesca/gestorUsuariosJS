@@ -43,7 +43,7 @@ app.use(cors({
 app.use(chequeRoutes);
 
 app.get('/', (req, res) => {
-    res.render('example', { username: 'devekin' });
+    res.render('example', { username: 'Usuario' });
 });
 
 app.post('/login', async (req, res) => {
