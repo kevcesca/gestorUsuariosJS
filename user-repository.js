@@ -391,7 +391,7 @@ export class UserRepository {
                 GROUP BY 
                     u.id_empleado, e.nombre, e.apellido_1, e.apellido_2, u.nombre_usuario, u.correo_usuario, u.fecha_creacion, u.asigno, u.estado_usuario
                 ORDER BY 
-                    u.id_empleado;
+                    u.fecha_creacion DESC; -- Cambiado a descendente para mostrar los más recientes primero
             `;
             const result = await client.query(query);
             return result.rows; // Devuelve los usuarios con roles agrupados
@@ -401,7 +401,7 @@ export class UserRepository {
         } finally {
             client.release();
         }
-    }
+    }    
 
     static async toggleUserStatus(id_empleado) {
         const client = await pool.connect();

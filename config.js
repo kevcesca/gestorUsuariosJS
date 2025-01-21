@@ -3,7 +3,7 @@ export const {
   PORT = 3001,
   SALT_ROUNDS = 10,
   PG_USER = 'postgres',
-  PG_HOST = '192.168.0.68',
+  PG_HOST = '192.168.100.25',
   PG_DATABASE = 'SistemaNomina',
   PG_PASSWORD = 'Pjmx3840',
   PG_PORT = 5432,
